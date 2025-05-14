@@ -39,25 +39,27 @@ lenet_kunpeng920/
    ```
 2. **编译并运行不同优化版本**
    
-   编译 baseline（纯 C 实现）
+   编译运行 baseline（纯 C 实现）与gcc指令优化
    ```bash
    cd lenet_baseline
-   gcc -O3 -DPERF -Iinclude src/*.c -lm -o lenet_base
+   gcc -O0 -g -march=armv8-a -fno-tree-vectorize -fno-unroll-loops -fno-inline -DPERF -Iinclude src/*.c -lm -o lenet_baseline
+   gcc -O3 -march=armv8.2-a+simd -ffast-math -funroll-loops -DPERF -Iinclude src/*.c -lm -o lenet_fp32_O3
    ./lenet_base
+   ./lenet_fp32_O3
    ```
 
    编译 unroll（循环展开优化）
    ```
    cd lenet_unroll
-   gcc -O3 -DPERF -funroll-loops -Iinclude src/*.c -lm -o lenet_unroll
+   gcc -O3 -ffast-math -funroll-loops -march=armv8-a+simd -DPERF -Iinclude src/*.c -lm -o lenet_unroll
    ./lenet_unroll
    ```
    
    编译NEON 向量化优化和NEON 汇编微核优化
    ```
    cd lenet_neon
-   gcc -O3 -DPERF -DUSE_NEON -march=armv8-a+simd -Iinclude src/*.c -lm -o lenet_neon #neon 向量化优化
-   gcc -O3 -DPERF -DUSE_NEON_ASM -march=armv8.2-a+simd -Iinclude src/*.c -lm -o lenet_asm #neon 汇编微核优化
+   gcc -O3 -ffast-math -funroll-loops -march=armv8.2-a+simd  -DPERF -DUSE_NEON -Iinclude src/*.c -lm -o lenet_neon #neon 向量化优化
+   gcc -O3 -ffast-math -funroll-loops -march=armv8.2-a+simd -DPERF -DUSE_NEON -DUSE_NEON_ASM -Iinclude src/*.c src/conv5x5_neon_asm.S -lm -o lenet_neon_asm #neon 汇编微核优化
    ./lenet_neon
    ./lenet_asm
    ```
@@ -65,7 +67,7 @@ lenet_kunpeng920/
    编译 gemm（im2col + sgemm 优化）
    ```
    cd lenet_gemm
-   gcc -O3 -DPERF -DUSE_NEON -DUSE_GEMM -march=armv8.2-a+simd -Iinclude src/*.c -lm -o lenet_gemm
+   gcc -O3 -ffast-math -funroll-loops -march=armv8.2-a+simd -DPERF -DUSE_NEON -Iinclude src/*.c -lm -o lenet_gemm
    ./lenet_gemm
    ```
 
