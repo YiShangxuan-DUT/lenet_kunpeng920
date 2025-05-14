@@ -10,6 +10,7 @@
 #include <string.h>
 #include <math.h>
 
+
 /* ------------------------------------------------------------- *
  * 1. 通用 2-D 卷积 (慢速参考版本，仍保留方便对拍)
  * ------------------------------------------------------------- */
@@ -168,6 +169,60 @@ static void conv2d_5x5_s1_neon(const Tensor *in, Tensor *out,
 }
 #endif /* USE_NEON */
 
+#ifdef USE_NEON_ASM
+// extern void kern25_fma4(const dtype *in, const dtype *ker,
+//                         dtype *out, int ic, int iw, dtype bias);
+extern void kern25_fma4(const dtype *in, const dtype *ker,
+                         dtype *out, int ic, int iw, int ih, dtype bias);
+
+
+static void conv2d_5x5_s1_neon_asm(const Tensor *in, Tensor *out,
+                                   const Tensor *w, const dtype *bias)
+{
+    const int N=in->n, IC=in->c, IH=in->h, IW=in->w;
+    const int OC=out->c, OH=out->h, OW=out->w;
+
+    for (int n=0; n<N; n++){
+        const dtype *in_n  = in->data  + (size_t)n*IC*IH*IW;
+        dtype       *out_n = out->data + (size_t)n*OC*OH*OW;
+
+        for (int oc=0; oc<OC; oc++){
+            const dtype *k_oc = w->data + (size_t)oc*IC*25;
+            dtype       *outm = out_n   + (size_t)oc*OH*OW;
+
+            for (int oh=0; oh<OH; oh++){
+                dtype *outptr = outm + (size_t)oh*OW;
+                for (int ow=0; ow+3<OW; ow+=4){
+                    kern25_fma4(in_n + (size_t)oh*IW + ow,
+                                k_oc, outptr + ow,
+                                IC, IW,IH, bias[oc]);
+                }
+                /* 尾列不足 4 个：退回 intrinsic 版 */
+                for (int ow_tail=(OW&~3); ow_tail<OW; ow_tail++){
+                    float32x4_t z = vdupq_n_f32(0.f);
+                    acc_t acc = (acc_t)bias[oc];
+                    for (int ic=0; ic<IC; ic++){
+                        const dtype *base = in_n + (size_t)ic*IH*IW
+                                                  + (size_t)oh*IW + ow_tail;
+                        const dtype *kptr = k_oc + (size_t)ic*25;
+                        for (int kh=0; kh<5; kh++){
+                            acc += (acc_t)base[kh*IW+0] * (acc_t)kptr[kh*5+0];
+                            acc += (acc_t)base[kh*IW+1] * (acc_t)kptr[kh*5+1];
+                            acc += (acc_t)base[kh*IW+2] * (acc_t)kptr[kh*5+2];
+                            acc += (acc_t)base[kh*IW+3] * (acc_t)kptr[kh*5+3];
+                            acc += (acc_t)base[kh*IW+4] * (acc_t)kptr[kh*5+4];
+                        }
+                    }
+                    outptr[ow_tail] = (dtype)acc;
+                }
+            }
+        }
+    }
+}
+#endif /* USE_NEON_ASM */
+
+
+
 /* ------------------------------------------------------------- *
  * 4. 其余算子：池化 / ReLU / FC / Softmax
  * ------------------------------------------------------------- */
@@ -252,11 +307,14 @@ void lenet_forward_batch(const Tensor *imgs, const dtype *p,
     Tensor w4={10,1,1,120,(dtype*)(p+off)};
     const dtype *b4 = p + off;
 
-#ifdef USE_NEON
-#  define CONV5x5  conv2d_5x5_s1_neon
+#if defined(USE_NEON_ASM)
+  #define CONV5x5  conv2d_5x5_s1_neon_asm
+#elif defined(USE_NEON)
+  #define CONV5x5  conv2d_5x5_s1_neon
 #else
-#  define CONV5x5  conv2d_5x5_s1
+  #define CONV5x5  conv2d_5x5_s1
 #endif
+
 
 #ifdef PERF
     T_START(total);   T_START(conv1);
