@@ -38,6 +38,7 @@ lenet_kunpeng920/
    cd lenet_kunpeng920
    ```
 2. **编译并运行不同优化版本**
+   
    编译 baseline（纯 C 实现）
    ```bash
    cd lenet_baseline
